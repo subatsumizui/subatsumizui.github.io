@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Test</title>
+	<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+</head>
+<body>
+	<script>
+const testPeer = new Peer('test-user-' + Math.floor(Math.random() * 1000), {
+	host: 'localhost',
+	port: 9000,
+	secure: false,
+	path: '/',
+	debug: 3
+});
+
+testPeer.on('open', (id) => {
+	console.log('我的 Peer ID 是: ' + id);
+});
+
+testPeer.on('error', (err) => {
+	console.error('PeerJS 發生錯誤:', err);
+});
+	</script>
+</body>
+</html>
