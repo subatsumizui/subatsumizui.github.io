@@ -198,12 +198,13 @@
 				const setupPeer = (token, key) => {
 					return new Promise((resolve, reject) => {
 						peer = new Peer(myId.value, {
+							key,
 							host: config.host,
 							port: config.port, 
 							path: '/',
-							secure: false,
-							token: `${token}:${key}:${navigator.userAgent}`,
-							debug: 0
+							secure: !config.isLocal,
+							token,
+							debug: 3
 						});
 
 						console.log(token, key, navigator.userAgent);
