@@ -1,27 +1,371 @@
 <!DOCTYPE html>
+<html lang="zh-TW">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Test</title>
 	<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+	<script src="https://unpkg.com/vue@3.5.27/dist/vue.global.prod.js"></script>
+	<style>
+		body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+		.status { padding: 10px; border-radius: 5px; background: #f0f0f0; margin-bottom: 10px; }
+		.chat-box { border: 1px solid #ccc; height: 200px; overflow-y: scroll; padding: 10px; margin: 10px 0; }
+	</style>
 </head>
 <body>
+	<div id="app">
+		<h2>Test</h2>
+		
+		<div class="status">
+			狀態：{{ statusText }} <br/>
+			我的 ID：<b>{{ myId || '取得中...' }}</b> <br/>
+			對手 ID：<b>{{ opponentId || '等待中...' }}</b> <br/>
+			我的暱稱：<input v-if="!isPlaying && !isPairing" type="text" v-model="myName" placeholder="輸入暱稱"><span v-if="isPlaying || isPairing">{{ myName }}</span><br/>
+			對手暱稱：<b>{{ opponentName || '等待中...' }}</b>
+		</div>
+
+		<div v-if="myId && !opponentId">
+			分享連結給好友: <br/>
+			<input type="text" :value="shareLink" readonly style="width: 80%">
+			<button @click="copyLink">複製</button>
+		</div>
+
+		<div class="chat-box" ref="chatBox">
+			<div v-for="msg in messages">{{ msg }}</div>
+		</div>
+
+		<div v-if="isPlaying && !isPairing">
+			<input v-model="inputMsg" @keyup.enter="sendMessage" placeholder="輸入訊息...">
+			<button @click="sendMessage">發送</button>
+		</div>
+
+		<div v-if="!isPlaying && !isPairing">
+			<button @click="startMatch('auto')">自動配對</button><br/>
+			<button @click="startMatch('manual')">建立對局</button><br/>
+			<input type="text" v-model="opponentId" placeholder="輸入對手 ID">
+			<button @click="location.assign(`?join=${opponentId}`)">加入對局</button>
+		</div>
+	</div>
+
 	<script>
-const testPeer = new Peer('test-user-' + Math.floor(Math.random() * 1000), {
-	host: 'localhost',
-	port: 9000,
-	secure: false,
-	path: '/',
-	debug: 3
-});
+		const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
 
-testPeer.on('open', (id) => {
-	console.log('我的 Peer ID 是: ' + id);
-});
+		createApp({
+			setup() {
+				const myId = ref('');
+				const myName = ref('');
+				const myReconnectKey = ref('');
+				const opponentId = ref('');
+				const opponentName = ref('');
+				const myRole = ref(''); // 'host' or 'guest'
+				const statusText = ref('尚未連線');
+				const messages = ref([]);
+				const inputMsg = ref('');
+				const isPairing = ref(false);
+				const isPlaying = ref(false);
+				const chatBox = ref(null);
 
-testPeer.on('error', (err) => {
-	console.error('PeerJS 發生錯誤:', err);
-});
+				let peer = null;
+				let conn = null;
+				let iceServers = null;
+
+				const handleUnload = () => {
+					if (peer)
+						peer.destroy(); 
+				};
+
+				// const isLocal = window.location.hostname === '';
+				const isLocal = true;
+				const config = {
+					isLocal,
+					host: isLocal ? 'localhost' : '',
+					port: isLocal ? 9000 : 443
+				};
+
+				const shareLink = computed(() => {
+					const link = `${window.location.origin}${window.location.pathname}?join=${myId.value}`;
+					return link.startsWith('null/') ? `file://${link.substring(4)}`: link;
+				});
+
+				const decryptString = async (encryptedObj, password, salt, iv64) => {
+					const encoder = new TextEncoder();
+					const decoder = new TextDecoder();
+
+					// 1. 匯入原始密碼材料
+					const keyMaterial = await window.crypto.subtle.importKey(
+						'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
+					);
+
+					// 2. 衍生解密金鑰 (必須與 Server 端參數完全一致)
+					const key = await window.crypto.subtle.deriveKey(
+						{ 
+							name: 'PBKDF2', 
+							salt: encoder.encode(salt), 
+							iterations: 100000, 
+							hash: 'SHA-256' 
+						},
+						keyMaterial, 
+						{ name: 'AES-GCM', length: 256 }, 
+						false, 
+						['decrypt']
+					);
+
+					// 3. 準備解密資料 (Base64 轉 Uint8Array)
+					const iv = Uint8Array.from(atob(encryptedObj.iv), c => c.charCodeAt(0));
+					const tag = Uint8Array.from(atob(encryptedObj.tag), c => c.charCodeAt(0));
+					const data = Uint8Array.from(atob(encryptedObj.data), c => c.charCodeAt(0));
+
+					// 將 tag 附加在 data 後面 (Web Crypto API 的 AES-GCM 預期格式)
+					const combinedData = new Uint8Array(data.length + tag.length);
+					combinedData.set(data);
+					combinedData.set(tag, data.length);
+
+					// 4. 執行解密
+					try {
+						const decryptedRaw = await window.crypto.subtle.decrypt(
+							{ name: 'AES-GCM', iv: iv },
+							key,
+							combinedData
+						);
+						return JSON.parse(decoder.decode(decryptedRaw));
+					} catch (e) {
+						console.error(e);
+						return null;
+					}
+				};
+
+				// 1. 初始化並取得憑證
+				const init = async () => {
+					statusText.value = '等待玩家自動配對、建立對局或加入對局';
+
+					const urlParams = new URLSearchParams(window.location.search);
+					const joinId = urlParams.get('join');
+
+					// 如果 URL 有 join，走手動配對；否則看使用者點擊
+					if (joinId) {
+						opponentId.value = joinId;
+						await startMatch('manual');
+					}
+				};
+
+				// index.html 中的 startMatch 邏輯 (使用 Tab 縮排)
+				const startMatch = async (type) => {
+					isPairing.value = true;
+					statusText.value = '與伺服器建立連線中';
+
+					// 1. 向伺服器要 ID 與大廳清單 
+					const tokenRes = await fetch(`http${config.isLocal?'':'s'}://${config.host}:${config.port}/token`);
+					const { token } = await tokenRes.json();
+					const matchRes = await fetch(`http${config.isLocal?'':'s'}://${config.host}:${config.port}/match?token=${token}&type=${type}`);
+					const { id, key, lobby, ice } = await matchRes.json();
+					
+					myId.value = id;
+					myReconnectKey.value = key;
+					iceServers = ice;
+
+					if (await setupPeer(token, key, ice)) {
+						statusText.value = `與伺服器連線成功`;
+					} else {
+						isPairing.value = false;
+						statusText.value = `與伺服器連線失敗`;
+						return;
+					}
+
+					let opponentIDs;
+					if (lobby) {
+						opponentIDs = lobby;
+						statusText.value = `自動配對進行中`;
+					} else if (opponentId.value) {
+						opponentIDs = new Set(opponentId.value)
+						statusText.value = `與玩家建立連線中`;
+					} else {
+						opponentIDs = new Set();
+						statusText.value = `等待其他玩家加入中`;
+					}
+					for (const targetId of opponentIDs) {
+						if (await setupConn(peer.connect(targetId), 'guest')) {
+							isPairing.value = false;
+							isPlaying.value = true;
+							myRole.value = 'guest';
+							opponentId.value = targetId;
+							statusText.value = `與玩家連線成功`;
+							break;
+						}
+					}
+				};
+
+				// 3. 設定 PeerJS
+				const setupPeer = (token, key) => {
+					return new Promise((resolve, reject) => {
+						peer = new Peer(myId.value, {
+							host: config.host,
+							port: config.port, 
+							path: '/',
+							secure: false,
+							token: `${token}:${key}:${navigator.userAgent}`,
+							debug: 0
+						});
+
+						console.log(token, key, navigator.userAgent);
+
+						peer.on('open', (id) => {
+							return resolve(true);
+						});
+
+						peer.on('connection', async (connection) => {
+							if (await setupConn(connection, 'host')) {
+								isPairing.value = false;
+								isPlaying.value = true;
+								myRole.value = 'host';
+								opponentId.value = connection.peer;
+								statusText.value = `與玩家連線成功`;
+							}
+						});
+
+						peer.on('close', () => {
+							if (!isPlaying) {
+								isPairing.value = false;
+								statusText.value = `與伺服器連線中斷`;
+							}
+						});
+
+						peer.on('error', (err) => {
+							console.log(err);
+							// console.log(err.type);
+							// console.log('network' === err.type);
+							// console.log('peer-unavailable' === err.type);
+							// console.log('server-error' === err.type);
+							return resolve(false);
+						});
+					});
+				};
+
+				const setupConn = (connection, role, peer) => {
+					return new Promise((resolve, reject) => {
+						if (peer)
+							peer.on('error', (err) => {
+								console.log(err);
+								// console.log(err.type);
+								// console.log('network' === err.type);
+								// console.log('peer-unavailable' === err.type);
+								// console.log('server-error' === err.type);
+								return resolve(false);
+							});
+
+						connection.on('data', (data) => {
+							if (connection.peer !== opponentId.value)
+								return;
+							switch (data.type) {
+								case 'msg':
+									messages.value.push(`對手：${data.value}`);
+									scrollToBottom();
+									break;
+								case 'ack':
+									if ('guest' === role) {
+										if (undefined === data.value) {
+											return resolve(false);
+										} else {
+											conn = connection;
+											opponentName.value = data.value;
+											conn.send({
+												type: 'ack',
+												value: myName.value
+											});
+											return resolve(true);
+										}
+									} else {
+										opponentName.value = data.value;
+									}
+									break;
+							}
+						});
+
+						connection.on('open', () => {
+							if ('host' !== role)
+								return;
+							if (conn) {
+								if (connection.peer === opponentId.value) {
+									conn.close();
+								} else {
+									connection.send({
+										type: 'ack'
+									});
+									connection.close();
+									return resolve(false);
+								}
+							}
+							conn = connection;
+							conn.send({
+								type: 'ack',
+								value: myName.value
+							});
+							return resolve(true);
+						});
+
+						connection.on('close', () => {
+							if (isPlaying) {
+								statusText.value = `與玩家連線中斷，嘗試重新連線中`;
+								isPairing.value = true;
+								handleReconnection();
+							}
+						});
+
+						connection.on('error', (err) => {
+							console.log(err);
+						});
+					});
+				};
+
+				// 6. 斷線重連邏輯
+				const handleReconnection = async () => {
+					if (peer.disconnected) {
+						const tokenRes = await fetch(`http${config.isLocal?'':'s'}://${config.host}:${config.port}/token`);
+						const { token } = await tokenRes.json();
+
+						do {} while (!await setupPeer(myId.value, myReconnectKey.value, iceServers));
+						if ('guest' === myRole.value)
+							do {} while (!await setupConn(peer.connect(targetId), 'guest'));
+						isPairing.value = false;
+						statusText.value = `與玩家連線成功`;
+					}
+				};
+
+				const sendMessage = () => {
+					if (!inputMsg.value) return;
+					conn.send({ msg: inputMsg.value });
+					messages.value.push(`我: ${inputMsg.value}`);
+					inputMsg.value = '';
+					scrollToBottom();
+				};
+
+				const scrollToBottom = () => {
+					nextTick(() => {
+						if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight;
+					});
+				};
+
+				const copyLink = () => {
+					navigator.clipboard.writeText(shareLink.value);
+					alert('連結已複製');
+				};
+
+				onMounted(() => {
+					init();
+					window.addEventListener('beforeunload', handleUnload);
+					window.addEventListener('pagehide', handleUnload); 
+				});
+
+				onUnmounted(() => {
+					window.removeEventListener('beforeunload', handleUnload);
+					window.removeEventListener('pagehide', handleUnload);
+				});
+
+				return {
+					myId, opponentId, statusText, messages, inputMsg, isPlaying, isPairing,
+					shareLink, chatBox, startMatch, sendMessage, copyLink, location
+				};
+			}
+		}).mount('#app');
 	</script>
 </body>
 </html>
