@@ -87,6 +87,13 @@
 					return link.startsWith('null/') ? `file://${link.substring(4)}`: link;
 				});
 
+				const base64urlToBase64 = (u) => {
+					let b = u.replace(/-/g, '+').replace(/_/g, '/');
+					while (b.length % 4)
+						b += '=';
+					return b;
+				};
+
 				const decryptString = async (encryptedObj, password, salt, iv64) => {
 					const encoder = new TextEncoder();
 					const decoder = new TextDecoder();
@@ -111,9 +118,9 @@
 					);
 
 					// 3. 準備解密資料 (Base64 轉 Uint8Array)
-					const iv = Uint8Array.from(atob(encryptedObj.iv), c => c.charCodeAt(0));
-					const tag = Uint8Array.from(atob(encryptedObj.tag), c => c.charCodeAt(0));
-					const data = Uint8Array.from(atob(encryptedObj.data), c => c.charCodeAt(0));
+					const iv = Uint8Array.from(atob(base64urlToBase64(encryptedObj.iv)), c => c.charCodeAt(0));
+					const tag = Uint8Array.from(atob(base64urlToBase64(encryptedObj.tag)), c => c.charCodeAt(0));
+					const data = Uint8Array.from(atob(base64urlToBase64(encryptedObj.data)), c => c.charCodeAt(0));
 
 					// 將 tag 附加在 data 後面 (Web Crypto API 的 AES-GCM 預期格式)
 					const combinedData = new Uint8Array(data.length + tag.length);
