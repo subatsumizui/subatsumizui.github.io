@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Test</title>
+	<title>測試 Test</title>
 	<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
 	<script src="https://unpkg.com/vue@3.5.27/dist/vue.global.prod.js"></script>
 	<style>
@@ -14,7 +14,7 @@
 </head>
 <body>
 	<div id="app">
-		<h2>Test</h2>
+		<h2>測試 Test</h2>
 		
 		<div class="status">
 			狀態：{{ statusText }} <br/>
@@ -75,10 +75,10 @@
 				};
 
 				// const isLocal = window.location.hostname === '';
-				const isLocal = true;
+				const isLocal = false;
 				const config = {
 					isLocal,
-					host: isLocal ? 'localhost' : '',
+					host: isLocal ? 'localhost' : 'peerserver-krnx.onrender.com',
 					port: isLocal ? 9000 : 443
 				};
 
