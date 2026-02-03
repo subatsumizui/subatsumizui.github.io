@@ -183,7 +183,7 @@
 						statusText.value = `等待其他玩家加入中`;
 					}
 					for (const targetId of opponentIDs) {
-						if (await setupConn(peer.connect(targetId), 'guest')) {
+						if (await setupConn(peer.connect(targetId), 'guest', peer)) {
 							isPairing.value = false;
 							isPlaying.value = true;
 							myRole.value = 'guest';
@@ -325,7 +325,7 @@
 
 						do {} while (!await setupPeer(myId.value, myReconnectKey.value, iceServers));
 						if ('guest' === myRole.value)
-							do {} while (!await setupConn(peer.connect(targetId), 'guest'));
+							do {} while (!await setupConn(peer.connect(targetId), 'guest', peer));
 						isPairing.value = false;
 						statusText.value = `與玩家連線成功`;
 					}
