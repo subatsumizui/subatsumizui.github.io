@@ -74,12 +74,12 @@
 						peer.destroy(); 
 				};
 
-				// const isLocal = window.location.hostname === '';
-				const isLocal = false;
+				const isLocal = '' === window.location.hostname;
 				const config = {
-					isLocal,
+					protocol: isLocal ? 'http://' :'https://',
 					host: isLocal ? 'localhost' : 'peerserver-krnx.onrender.com',
-					port: isLocal ? 9000 : 443
+					port: isLocal ? 9000 : 443,
+					secure: !isLocal
 				};
 
 				const shareLink = computed(() => {
@@ -161,9 +161,9 @@
 					statusText.value = '與伺服器建立連線中';
 
 					// 1. 向伺服器要 ID 與大廳清單 
-					const tokenRes = await fetch(`http${config.isLocal?'':'s'}://${config.host}:${config.port}/token`);
+					const tokenRes = await fetch(`${config.protocol}${config.host}:${config.port}/token`);
 					const { token } = await tokenRes.json();
-					const matchRes = await fetch(`http${config.isLocal?'':'s'}://${config.host}:${config.port}/match?token=${token}&type=${type}`);
+					const matchRes = await fetch(`${config.protocol}${config.host}:${config.port}/match?token=${token}&type=${type}`);
 					const { id, key, lobby, ice } = await matchRes.json();
 					
 					myId.value = id;
@@ -208,7 +208,7 @@
 							host: config.host,
 							port: config.port, 
 							path: '/',
-							secure: !config.isLocal,
+							secure: config.secure,
 							token: token + key,
 							debug: 3
 						});
@@ -326,7 +326,7 @@
 				// 6. 斷線重連邏輯
 				const handleReconnection = async () => {
 					if (peer.disconnected) {
-						const tokenRes = await fetch(`http${config.isLocal?'':'s'}://${config.host}:${config.port}/token`);
+						const tokenRes = await fetch(`${config.protocol}${config.host}:${config.port}/token`);
 						const { token } = await tokenRes.json();
 
 						do {} while (!await setupPeer(myId.value, myReconnectKey.value, iceServers));
