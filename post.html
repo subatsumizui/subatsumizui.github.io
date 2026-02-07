@@ -77,7 +77,7 @@
 		const token = document.getElementById('token').value;
 		const method = document.getElementById('method').value;
 
-		resultDiv.textContent = "";
+		resultDiv.textContent = "posting...";
 
 		try {
 			const response = await fetch(url, {
