@@ -50,7 +50,6 @@
 </div>
 
 <script>
-	// 初始化：從 location.search 帶入資料
 	window.onload = () => {
 		const params = new URLSearchParams(window.location.search);
 		const urlParam = params.get('url');
@@ -64,7 +63,6 @@
 		}
 	};
 
-	// 監聽 Enter 鍵自動送出
 	document.addEventListener('keydown', (event) => {
 		if ('Enter' === event.key) {
 			post();
@@ -84,28 +82,21 @@
 		try {
 			const response = await fetch(url, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					user: user,
-					password: password,
-					token: token,
-					method: method
-				})
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ user, password, token, method })
 			});
 
 			const status = response.status;
+			const contentType = response.headers.get("content-type");
 			let content;
 
-			if (200 === status) {
+			if (null !== contentType && contentType.includes("application/json")) {
 				content = await response.json();
 			} else {
-				content = `HTTP ${status}`;
+				content = await response.text();
 			}
 
-			resultDiv.textContent = `[HTTP ${status}]\n\nResponse:\n${JSON.stringify(content, null, 2)}`;
-
+			resultDiv.textContent = `[HTTP ${status}]\n\nResponse:\n${'string' === typeof content ? content : JSON.stringify(content, null, '\t')}`;
 		} catch (err) {
 			resultDiv.textContent = `Error: ${err.message}`;
 			console.log(err);
