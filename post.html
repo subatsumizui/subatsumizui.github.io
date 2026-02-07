@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+	<meta charset="UTF-8">
+	<title>Post</title>
+	<style>
+		body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+		.container { max-width: 500px; margin: auto; border: 1px solid #ccc; padding: 20px; border-radius: 8px; }
+		.field { margin-bottom: 15px; }
+		label { display: block; margin-bottom: 5px; font-weight: bold; }
+		input, select { width: 100%; padding: 8px; box-sizing: border-box; }
+		button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
+		button:hover { background: #0056b3; }
+		#result { margin-top: 20px; white-space: pre-wrap; background: #f4f4f4; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+	</style>
+</head>
+<body>
+
+<div class="container">
+	<h2>Post</h2>
+	
+	<div class="field">
+		<label>Url</label>
+		<input type="text" id="url" placeholder="Url">
+	</div>
+	
+	<div class="field">
+		<label>User</label>
+		<input type="text" id="user" placeholder="User">
+	</div>
+
+	<div class="field">
+		<label>Password</label>
+		<input type="password" id="password" placeholder="Password">
+	</div>
+
+	<div class="field">
+		<label>OTP</label>
+		<input type="text" id="token" placeholder="OTP">
+	</div>
+
+	<div class="field">
+		<label>Method</label>
+		<input type="text" id="method" placeholder="Method">
+	</div>
+
+	<button onclick="post()">Send</button>
+
+	<div id="result"></div>
+</div>
+
+<script>
+	// 初始化：從 location.search 帶入資料
+	window.onload = () => {
+		const params = new URLSearchParams(window.location.search);
+		const urlParam = params.get('url');
+		const methodParam = params.get('method');
+
+		if (null !== urlParam) {
+			document.getElementById('url').value = urlParam;
+		}
+		if (null !== methodParam) {
+			document.getElementById('method').value = methodParam;
+		}
+	};
+
+	// 監聽 Enter 鍵自動送出
+	document.addEventListener('keydown', (event) => {
+		if ('Enter' === event.key) {
+			post();
+		}
+	});
+
+	async function post() {
+		const resultDiv = document.getElementById('result');
+		const url = document.getElementById('url').value;
+		const user = document.getElementById('user').value;
+		const password = document.getElementById('password').value;
+		const token = document.getElementById('token').value;
+		const method = document.getElementById('method').value;
+
+		resultDiv.textContent = "";
+
+		try {
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					user: user,
+					password: password,
+					token: token,
+					method: method
+				})
+			});
+
+			const status = response.status;
+			let content;
+
+			if (200 === status) {
+				content = await response.json();
+			} else {
+				content = `HTTP ${status}`;
+			}
+
+			resultDiv.textContent = `[HTTP ${status}]\n\nResponse:\n${JSON.stringify(content, null, 2)}`;
+
+		} catch (err) {
+			resultDiv.textContent = `Error: ${err.message}`;
+			console.log(err);
+		}
+	}
+</script>
+
+</body>
+</html>
