@@ -52,6 +52,7 @@
 <script>
 	window.onload = () => {
 		const params = new URLSearchParams(window.location.search);
+		window.history.replaceState({}, '', window.location.pathname);
 		const urlParam = params.get('url');
 		const methodParam = params.get('method');
 
